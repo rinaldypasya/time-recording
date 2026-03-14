@@ -99,6 +99,17 @@ func mapDomainErr(err error) (int, string) {
 	}
 }
 
+func parseIntParam(s string, defaultVal int) int {
+	if s == "" {
+		return defaultVal
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return defaultVal
+	}
+	return v
+}
+
 // ---- handlers ----
 
 func (h *TimeHandler) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -303,7 +314,7 @@ func (h *TimeHandler) handleRecordByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET /report?user_id=&from=2024-01-01&to=2024-01-31
+// GET /report?user_id=&from=2024-01-01&to=2024-01-31&page=1&page_size=31
 func (h *TimeHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed")
@@ -339,7 +350,32 @@ func (h *TimeHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, "failed to generate report")
 		return
 	}
-	writeJSON(w, http.StatusOK, report)
+
+	// Paginate the Days slice
+	page := parseIntParam(q.Get("page"), 1)
+	pageSize := parseIntParam(q.Get("page_size"), 31)
+	if pageSize > 366 {
+		pageSize = 366
+	}
+
+	totalDays := len(report.Days)
+	start := (page - 1) * pageSize
+	if start >= totalDays {
+		report.Days = nil
+	} else {
+		end := start + pageSize
+		if end > totalDays {
+			end = totalDays
+		}
+		report.Days = report.Days[start:end]
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"page":       page,
+		"page_size":  pageSize,
+		"total_days": totalDays,
+		"report":     report,
+	})
 }
 
 // parseTime parses an optional RFC3339 string; defaults to time.Now()
