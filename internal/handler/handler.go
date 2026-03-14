@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pasya/time-recording/internal/domain"
-	"github.com/pasya/time-recording/internal/service"
+	"github.com/rinaldypasya/time-recording/internal/domain"
+	"github.com/rinaldypasya/time-recording/internal/service"
 )
 
 // TimeHandler wires HTTP routes to the TimeService
@@ -37,6 +37,30 @@ func (h *TimeHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/report", h.handleReport)
 }
 
+// ---- validation ----
+
+const (
+	maxBodySize  = 1 << 20 // 1 MB
+	maxUserIDLen = 128
+	maxNoteLen   = 1024
+)
+
+func validateUserID(id string) bool {
+	if id == "" || len(id) > maxUserIDLen {
+		return false
+	}
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+			return false
+		}
+	}
+	return true
+}
+
+func validateNote(note string) bool {
+	return len(note) <= maxNoteLen
+}
+
 // ---- helpers ----
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -50,6 +74,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func decodeBody(r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBodySize)
 	return json.NewDecoder(r.Body).Decode(dst)
 }
 
@@ -89,8 +114,16 @@ func (h *TimeHandler) handleClockIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req clockInRequest
-	if err := decodeBody(r, &req); err != nil || req.UserID == "" {
-		writeError(w, http.StatusBadRequest, "user_id is required")
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if !validateUserID(req.UserID) {
+		writeError(w, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
+		return
+	}
+	if !validateNote(req.Note) {
+		writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
 		return
 	}
 	at, err := parseTime(req.At)
@@ -120,8 +153,16 @@ func (h *TimeHandler) handleClockOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req clockOutRequest
-	if err := decodeBody(r, &req); err != nil || req.UserID == "" {
-		writeError(w, http.StatusBadRequest, "user_id is required")
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if !validateUserID(req.UserID) {
+		writeError(w, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
+		return
+	}
+	if !validateNote(req.Note) {
+		writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
 		return
 	}
 	at, err := parseTime(req.At)
@@ -139,7 +180,6 @@ func (h *TimeHandler) handleClockOut(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /records  – manual create
-// GET  /records?user_id=&from=&to=
 type createRecordRequest struct {
 	UserID   string `json:"user_id"`
 	ClockIn  string `json:"clock_in"`
@@ -151,8 +191,16 @@ func (h *TimeHandler) handleRecords(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var req createRecordRequest
-		if err := decodeBody(r, &req); err != nil || req.UserID == "" || req.ClockIn == "" {
+		if err := decodeBody(r, &req); err != nil || req.ClockIn == "" {
 			writeError(w, http.StatusBadRequest, "user_id and clock_in are required")
+			return
+		}
+		if !validateUserID(req.UserID) {
+			writeError(w, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
+			return
+		}
+		if !validateNote(req.Note) {
+			writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
 			return
 		}
 		ci, err := time.Parse(time.RFC3339, req.ClockIn)
@@ -213,6 +261,10 @@ func (h *TimeHandler) handleRecordByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "clock_in is required")
 			return
 		}
+		if !validateNote(req.Note) {
+			writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
+			return
+		}
 		ci, err := time.Parse(time.RFC3339, req.ClockIn)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid clock_in format")
@@ -258,8 +310,8 @@ func (h *TimeHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	fromStr := q.Get("from")
 	toStr := q.Get("to")
 
-	if userID == "" || fromStr == "" || toStr == "" {
-		writeError(w, http.StatusBadRequest, "user_id, from, and to are required")
+	if !validateUserID(userID) || fromStr == "" || toStr == "" {
+		writeError(w, http.StatusBadRequest, "valid user_id, from, and to are required")
 		return
 	}
 
