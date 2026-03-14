@@ -1,9 +1,10 @@
 package middleware
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"time"
 )
@@ -25,7 +26,9 @@ func Logger(next http.Handler) http.Handler {
 // RequestID injects a unique request ID header
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := fmt.Sprintf("%016x", rand.Int63())
+		var b [8]byte
+		rand.Read(b[:])
+		id := fmt.Sprintf("%016x", binary.BigEndian.Uint64(b[:]))
 		r.Header.Set("X-Request-ID", id)
 		w.Header().Set("X-Request-ID", id)
 		next.ServeHTTP(w, r)
