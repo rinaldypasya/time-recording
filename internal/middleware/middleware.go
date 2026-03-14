@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -15,10 +15,12 @@ func Logger(next http.Handler) http.Handler {
 		start := time.Now()
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
-		log.Printf("[%s] %s %s %d %s",
-			r.Header.Get("X-Request-ID"),
-			r.Method, r.URL.Path, rw.status,
-			time.Since(start),
+		slog.Info("request",
+			"request_id", r.Header.Get("X-Request-ID"),
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rw.status,
+			"latency", time.Since(start).String(),
 		)
 	})
 }

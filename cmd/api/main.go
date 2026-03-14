@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,18 +17,22 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	dsn := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/timerecording?sslmode=disable")
 	port := getEnv("PORT", "8080")
 
 	// Connect and migrate
 	database, err := db.Connect(dsn)
 	if err != nil {
-		log.Fatalf("db connect: %v", err)
+		slog.Error("db connect failed", "error", err)
+		os.Exit(1)
 	}
 	defer database.Close()
 
 	if err := db.RunMigrations(database); err != nil {
-		log.Fatalf("migrations: %v", err)
+		slog.Error("migrations failed", "error", err)
+		os.Exit(1)
 	}
 
 	// Wire layers
@@ -50,9 +54,10 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		log.Printf("time-recording API listening on :%s", port)
+		slog.Info("server started", "port", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server: %v", err)
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -60,14 +65,15 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("shutting down server...")
+	slog.Info("shutting down server")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("server forced to shutdown: %v", err)
+		slog.Error("server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
-	log.Println("server stopped")
+	slog.Info("server stopped")
 }
 
 func getEnv(key, fallback string) string {

@@ -3,7 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -22,10 +22,10 @@ func Connect(dsn string) (*sql.DB, error) {
 	// Retry ping up to 10 times (useful when postgres starts after the app)
 	for i := 0; i < 10; i++ {
 		if err = db.Ping(); err == nil {
-			log.Println("database connected")
+			slog.Info("database connected")
 			return db, nil
 		}
-		log.Printf("waiting for database... (%d/10)", i+1)
+		slog.Info("waiting for database", "attempt", i+1, "max", 10)
 		time.Sleep(2 * time.Second)
 	}
 	return nil, fmt.Errorf("database not reachable: %w", err)
@@ -101,7 +101,7 @@ func RunMigrations(db *sql.DB) error {
 		if _, err := db.Exec(`INSERT INTO schema_migrations(name) VALUES($1)`, m.name); err != nil {
 			return fmt.Errorf("record migration %s: %w", m.name, err)
 		}
-		log.Printf("applied migration: %s", m.name)
+		slog.Info("applied migration", "name", m.name)
 	}
 	return nil
 }
