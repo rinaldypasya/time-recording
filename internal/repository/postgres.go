@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pasya/time-recording/internal/domain"
+	"github.com/rinaldypasya/time-recording/internal/domain"
 )
 
 type pgTimeRecordRepo struct {

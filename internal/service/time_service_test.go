@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pasya/time-recording/internal/domain"
-	"github.com/pasya/time-recording/internal/service"
+	"github.com/rinaldypasya/time-recording/internal/domain"
+	"github.com/rinaldypasya/time-recording/internal/service"
 )
 
 // ---- in-memory mock repository ----

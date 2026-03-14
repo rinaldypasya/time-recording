@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pasya/time-recording/internal/domain"
+	"github.com/rinaldypasya/time-recording/internal/domain"
 )
 
 // TimeService handles all business logic for time recording
