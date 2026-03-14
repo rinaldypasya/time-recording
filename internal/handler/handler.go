@@ -69,8 +69,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	resp := map[string]string{"error": msg}
+	if reqID := r.Header.Get("X-Request-ID"); reqID != "" {
+		resp["request_id"] = reqID
+	}
+	writeJSON(w, status, resp)
 }
 
 func decodeBody(r *http.Request, dst any) error {
@@ -110,31 +114,31 @@ type clockInRequest struct {
 
 func (h *TimeHandler) handleClockIn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	var req clockInRequest
 	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if !validateUserID(req.UserID) {
-		writeError(w, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
+		writeError(w, r, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
 		return
 	}
 	if !validateNote(req.Note) {
-		writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
+		writeError(w, r, http.StatusBadRequest, "note must not exceed 1024 characters")
 		return
 	}
 	at, err := parseTime(req.At)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid 'at' timestamp")
+		writeError(w, r, http.StatusBadRequest, "invalid 'at' timestamp")
 		return
 	}
 	rec, err := h.svc.ClockIn(req.UserID, req.Note, at)
 	if err != nil {
 		code, msg := mapDomainErr(err)
-		writeError(w, code, msg)
+		writeError(w, r, code, msg)
 		return
 	}
 	writeJSON(w, http.StatusCreated, rec)
@@ -149,31 +153,31 @@ type clockOutRequest struct {
 
 func (h *TimeHandler) handleClockOut(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	var req clockOutRequest
 	if err := decodeBody(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeError(w, r, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if !validateUserID(req.UserID) {
-		writeError(w, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
+		writeError(w, r, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
 		return
 	}
 	if !validateNote(req.Note) {
-		writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
+		writeError(w, r, http.StatusBadRequest, "note must not exceed 1024 characters")
 		return
 	}
 	at, err := parseTime(req.At)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid 'at' timestamp")
+		writeError(w, r, http.StatusBadRequest, "invalid 'at' timestamp")
 		return
 	}
 	rec, err := h.svc.ClockOut(req.UserID, req.Note, at)
 	if err != nil {
 		code, msg := mapDomainErr(err)
-		writeError(w, code, msg)
+		writeError(w, r, code, msg)
 		return
 	}
 	writeJSON(w, http.StatusOK, rec)
@@ -192,39 +196,39 @@ func (h *TimeHandler) handleRecords(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var req createRecordRequest
 		if err := decodeBody(r, &req); err != nil || req.ClockIn == "" {
-			writeError(w, http.StatusBadRequest, "user_id and clock_in are required")
+			writeError(w, r, http.StatusBadRequest, "user_id and clock_in are required")
 			return
 		}
 		if !validateUserID(req.UserID) {
-			writeError(w, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
+			writeError(w, r, http.StatusBadRequest, "user_id is required and must be 1-128 alphanumeric, dash, underscore, or dot characters")
 			return
 		}
 		if !validateNote(req.Note) {
-			writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
+			writeError(w, r, http.StatusBadRequest, "note must not exceed 1024 characters")
 			return
 		}
 		ci, err := time.Parse(time.RFC3339, req.ClockIn)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid clock_in format")
+			writeError(w, r, http.StatusBadRequest, "invalid clock_in format")
 			return
 		}
 		var co time.Time
 		if req.ClockOut != "" {
 			co, err = time.Parse(time.RFC3339, req.ClockOut)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid clock_out format")
+				writeError(w, r, http.StatusBadRequest, "invalid clock_out format")
 				return
 			}
 		}
 		rec, err := h.svc.CreateRecord(req.UserID, ci, co, req.Note)
 		if err != nil {
 			code, msg := mapDomainErr(err)
-			writeError(w, code, msg)
+			writeError(w, r, code, msg)
 			return
 		}
 		writeJSON(w, http.StatusCreated, rec)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -241,7 +245,7 @@ func (h *TimeHandler) handleRecordByID(w http.ResponseWriter, r *http.Request) {
 	idStr := strings.TrimPrefix(r.URL.Path, "/records/")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid record id")
+		writeError(w, r, http.StatusBadRequest, "invalid record id")
 		return
 	}
 
@@ -250,7 +254,7 @@ func (h *TimeHandler) handleRecordByID(w http.ResponseWriter, r *http.Request) {
 		rec, err := h.svc.GetRecord(id)
 		if err != nil {
 			code, msg := mapDomainErr(err)
-			writeError(w, code, msg)
+			writeError(w, r, code, msg)
 			return
 		}
 		writeJSON(w, http.StatusOK, rec)
@@ -258,30 +262,30 @@ func (h *TimeHandler) handleRecordByID(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var req updateRecordRequest
 		if err := decodeBody(r, &req); err != nil || req.ClockIn == "" {
-			writeError(w, http.StatusBadRequest, "clock_in is required")
+			writeError(w, r, http.StatusBadRequest, "clock_in is required")
 			return
 		}
 		if !validateNote(req.Note) {
-			writeError(w, http.StatusBadRequest, "note must not exceed 1024 characters")
+			writeError(w, r, http.StatusBadRequest, "note must not exceed 1024 characters")
 			return
 		}
 		ci, err := time.Parse(time.RFC3339, req.ClockIn)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid clock_in format")
+			writeError(w, r, http.StatusBadRequest, "invalid clock_in format")
 			return
 		}
 		var co time.Time
 		if req.ClockOut != "" {
 			co, err = time.Parse(time.RFC3339, req.ClockOut)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid clock_out format")
+				writeError(w, r, http.StatusBadRequest, "invalid clock_out format")
 				return
 			}
 		}
 		rec, err := h.svc.UpdateRecord(id, ci, co, req.Note)
 		if err != nil {
 			code, msg := mapDomainErr(err)
-			writeError(w, code, msg)
+			writeError(w, r, code, msg)
 			return
 		}
 		writeJSON(w, http.StatusOK, rec)
@@ -289,20 +293,20 @@ func (h *TimeHandler) handleRecordByID(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		if err := h.svc.DeleteRecord(id); err != nil {
 			code, msg := mapDomainErr(err)
-			writeError(w, code, msg)
+			writeError(w, r, code, msg)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
 // GET /report?user_id=&from=2024-01-01&to=2024-01-31
 func (h *TimeHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, r, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	q := r.URL.Query()
@@ -311,28 +315,28 @@ func (h *TimeHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	toStr := q.Get("to")
 
 	if !validateUserID(userID) || fromStr == "" || toStr == "" {
-		writeError(w, http.StatusBadRequest, "valid user_id, from, and to are required")
+		writeError(w, r, http.StatusBadRequest, "valid user_id, from, and to are required")
 		return
 	}
 
 	from, err := time.Parse("2006-01-02", fromStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "from must be YYYY-MM-DD")
+		writeError(w, r, http.StatusBadRequest, "from must be YYYY-MM-DD")
 		return
 	}
 	to, err := time.Parse("2006-01-02", toStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "to must be YYYY-MM-DD")
+		writeError(w, r, http.StatusBadRequest, "to must be YYYY-MM-DD")
 		return
 	}
 	if to.Before(from) {
-		writeError(w, http.StatusBadRequest, "to must not be before from")
+		writeError(w, r, http.StatusBadRequest, "to must not be before from")
 		return
 	}
 
 	report, err := h.svc.GenerateReport(userID, from, to)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate report")
+		writeError(w, r, http.StatusInternalServerError, "failed to generate report")
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
