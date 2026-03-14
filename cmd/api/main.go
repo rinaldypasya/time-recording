@@ -21,6 +21,7 @@ func main() {
 
 	dsn := getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/timerecording?sslmode=disable")
 	port := getEnv("PORT", "8080")
+	apiKey := getEnv("API_KEY", "")
 
 	// Connect and migrate
 	database, err := db.Connect(dsn)
@@ -44,8 +45,15 @@ func main() {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
-	// Apply middleware chain
-	chain := middleware.Logger(middleware.RequestID(mux))
+	// Apply middleware chain (outermost first)
+	// Logger -> RateLimiter -> APIKeyAuth -> RequestID -> mux
+	chain := middleware.Logger(
+		middleware.RateLimiter(10, 20)(
+			middleware.APIKeyAuth(apiKey)(
+				middleware.RequestID(mux),
+			),
+		),
+	)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
