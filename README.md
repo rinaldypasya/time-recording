@@ -5,13 +5,13 @@ A production-grade REST API for employee time tracking, built in Go using clean 
 ## Architecture
 
 ```
-cmd/api/             → entrypoint (wiring, server startup)
+cmd/api/             → entrypoint (wiring, server startup, graceful shutdown)
 internal/
   domain/            → models, interfaces, sentinel errors
   repository/        → PostgreSQL implementations
   service/           → business logic (clock state machine, overtime calc, reporting)
-  handler/           → HTTP routing & request/response marshalling
-  middleware/        → request logging, request-ID injection
+  handler/           → HTTP routing, request/response marshalling, input validation
+  middleware/        → structured logging, request-ID, rate limiting, API key auth
   db/                → connection pool + embedded migrations
 ```
 
@@ -24,13 +24,27 @@ internal/
 | Soft deletes (`deleted_at`) | Preserves audit trail for time records |
 | Embedded migrations in Go | No external migration tool needed; runs on startup |
 | Interface-driven repository | Enables full unit testing without a database |
+| Graceful shutdown | Handles SIGINT/SIGTERM; drains in-flight requests with a 15s timeout |
+| Structured logging (`log/slog`) | JSON output with key-value pairs for observability tooling |
+| Per-IP token bucket rate limiting | Prevents resource exhaustion without global bottleneck |
+| Optional API key auth | Bearer token via `API_KEY` env var; disabled when unset |
 
 ---
 
 ## Prerequisites
 
-- Go 1.22+
+- Go 1.24+
 - Docker & Docker Compose (recommended)
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/timerecording?sslmode=disable` | PostgreSQL connection string |
+| `PORT` | `8080` | Server listen port |
+| `API_KEY` | _(empty — auth disabled)_ | When set, all endpoints (except `/health`) require `Authorization: Bearer <key>` |
 
 ---
 
@@ -44,6 +58,12 @@ docker compose up --build
 
 The API will be available at `http://localhost:8080`.
 
+To enable authentication:
+
+```bash
+API_KEY=my-secret-key docker compose up --build
+```
+
 ---
 
 ## Local Development
@@ -55,10 +75,13 @@ docker compose up postgres -d
 # 2. Set connection string
 export DATABASE_URL="postgres://postgres:postgres@localhost:5432/timerecording?sslmode=disable"
 
-# 3. Run
+# 3. (Optional) Enable API key auth
+export API_KEY="my-secret-key"
+
+# 4. Run
 go run ./cmd/api
 
-# 4. Test
+# 5. Test
 go test ./... -race
 ```
 
@@ -66,8 +89,51 @@ go test ./... -race
 
 ## API Reference
 
-All request/response bodies are JSON. Timestamps use **RFC3339** format (e.g. `2024-01-08T09:00:00Z`).  
+All request/response bodies are JSON. Timestamps use **RFC3339** format (e.g. `2024-01-08T09:00:00Z`).
 Dates in query params use `YYYY-MM-DD`.
+
+### Authentication
+
+When `API_KEY` is set, include the header on every request (except `/health`):
+
+```
+Authorization: Bearer <your-api-key>
+```
+
+Unauthenticated requests receive:
+
+```json
+{"error": "unauthorized"}
+```
+
+### Input Validation
+
+All endpoints enforce the following constraints:
+
+| Field | Constraint |
+|---|---|
+| `user_id` | 1–128 characters, alphanumeric plus `-`, `_`, `.` |
+| `note` | Max 1024 characters |
+| Request body | Max 1 MB |
+
+### Error Responses
+
+All error responses include the `request_id` for log correlation:
+
+```json
+{"error": "user is already clocked in", "request_id": "a1b2c3d4e5f6g7h8"}
+```
+
+### Rate Limiting
+
+The API enforces per-IP rate limiting (10 requests/second, burst of 20). Exceeding the limit returns:
+
+```
+429 Too Many Requests
+Retry-After: 1
+```
+
+---
 
 ### Health
 
@@ -75,6 +141,8 @@ Dates in query params use `YYYY-MM-DD`.
 GET /health
 → 200  {"status":"ok"}
 ```
+
+This endpoint is exempt from authentication and rate limiting.
 
 ---
 
@@ -95,6 +163,7 @@ POST /clock-in
 ```bash
 curl -X POST http://localhost:8080/clock-in \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret-key" \
   -d '{"user_id":"alice","at":"2024-01-08T09:00:00Z","note":"morning shift"}'
 ```
 
@@ -112,9 +181,6 @@ curl -X POST http://localhost:8080/clock-in \
 ```
 
 **Error 409** – already clocked in
-```json
-{"error": "user is already clocked in"}
-```
 
 ---
 
@@ -133,12 +199,13 @@ POST /clock-out
 ```bash
 curl -X POST http://localhost:8080/clock-out \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret-key" \
   -d '{"user_id":"alice","at":"2024-01-08T18:00:00Z"}'
 ```
 
 **Response 200** – same shape as clock-in, with `clock_out` populated.
 
-**Error 409** – not clocked in  
+**Error 409** – not clocked in
 **Error 400** – clock-out time is before clock-in time
 
 ---
@@ -161,6 +228,7 @@ POST /records
 ```bash
 curl -X POST http://localhost:8080/records \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret-key" \
   -d '{"user_id":"alice","clock_in":"2024-01-09T09:00:00Z","clock_out":"2024-01-09T17:30:00Z"}'
 ```
 
@@ -171,7 +239,8 @@ GET /records/{id}
 ```
 
 ```bash
-curl http://localhost:8080/records/1
+curl -H "Authorization: Bearer my-secret-key" \
+  http://localhost:8080/records/1
 ```
 
 #### Update Record
@@ -183,6 +252,7 @@ PUT /records/{id}
 ```bash
 curl -X PUT http://localhost:8080/records/1 \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret-key" \
   -d '{"clock_in":"2024-01-09T09:00:00Z","clock_out":"2024-01-09T18:00:00Z","note":"corrected"}'
 ```
 
@@ -194,7 +264,8 @@ DELETE /records/{id}
 ```
 
 ```bash
-curl -X DELETE http://localhost:8080/records/1
+curl -X DELETE -H "Authorization: Bearer my-secret-key" \
+  http://localhost:8080/records/1
 ```
 
 ---
@@ -205,28 +276,42 @@ curl -X DELETE http://localhost:8080/records/1
 GET /report?user_id=alice&from=2024-01-01&to=2024-01-31
 ```
 
+| Param | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `user_id` | string | ✓ | — | User to report on |
+| `from` | YYYY-MM-DD | ✓ | — | Start date (inclusive) |
+| `to` | YYYY-MM-DD | ✓ | — | End date (inclusive) |
+| `page` | int | — | `1` | Page number |
+| `page_size` | int | — | `31` | Days per page (max 366) |
+
 ```bash
-curl "http://localhost:8080/report?user_id=alice&from=2024-01-08&to=2024-01-12"
+curl -H "Authorization: Bearer my-secret-key" \
+  "http://localhost:8080/report?user_id=alice&from=2024-01-08&to=2024-01-12"
 ```
 
 **Response 200**
 ```json
 {
-  "user_id": "alice",
-  "from": "2024-01-08T00:00:00Z",
-  "to": "2024-01-12T23:59:59Z",
-  "total_worked_hours": 42.5,
-  "total_overtime_hours": 2.5,
-  "days": [
-    {
-      "date": "2024-01-08T00:00:00Z",
-      "is_working_day": true,
-      "worked_seconds": 32400,
-      "worked_hours": 9.0,
-      "overtime_hours": 1.0,
-      "records": [...]
-    }
-  ]
+  "page": 1,
+  "page_size": 31,
+  "total_days": 5,
+  "report": {
+    "user_id": "alice",
+    "from": "2024-01-08T00:00:00Z",
+    "to": "2024-01-12T23:59:59Z",
+    "total_worked_hours": 42.5,
+    "total_overtime_hours": 2.5,
+    "days": [
+      {
+        "date": "2024-01-08T00:00:00Z",
+        "is_working_day": true,
+        "worked_seconds": 32400,
+        "worked_hours": 9.0,
+        "overtime_hours": 1.0,
+        "records": [...]
+      }
+    ]
+  }
 }
 ```
 
@@ -269,7 +354,7 @@ Migrations run automatically on startup via the embedded runner in `internal/db/
 
 ## Assumptions
 
-1. **User identity** — `user_id` is a plain string (e.g. UUID or email). Authentication/authorisation is out of scope; the API assumes a trusted internal caller or an upstream gateway handles it.
+1. **User identity** — `user_id` is a plain string (1–128 alphanumeric, dash, underscore, or dot characters). Optional API key authentication is available via the `API_KEY` environment variable; when unset, the API assumes a trusted internal caller or an upstream gateway.
 
 2. **Single active record per user** — A user can have at most one open (no `clock_out`) record at a time. Attempting a second clock-in returns HTTP 409.
 
