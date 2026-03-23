@@ -13,6 +13,7 @@ internal/
   handler/           → HTTP routing, request/response marshalling, input validation
   middleware/        → structured logging, request-ID, rate limiting, API key auth
   db/                → connection pool + embedded migrations
+web/                 → embedded frontend (single-page HTML/CSS/JS, no build step)
 ```
 
 **Key design decisions**
@@ -57,6 +58,7 @@ docker compose up --build
 ```
 
 The API will be available at `http://localhost:8080`.
+Open `http://localhost:8080` in your browser to access the frontend UI.
 
 To enable authentication:
 
@@ -84,6 +86,21 @@ go run ./cmd/api
 # 5. Test
 go test ./... -race
 ```
+
+---
+
+## Frontend UI
+
+A built-in web interface is available at `http://localhost:8080` (redirects to `/ui/`). The frontend is a single-page application with no external dependencies — vanilla HTML, CSS, and JavaScript embedded directly into the Go binary via `go:embed`.
+
+### Features
+
+- **Clock In/Out** — One-click clock-in and clock-out with real-time status indicator and optional notes
+- **Records Management** — View, create, edit, and delete time records for the current month
+- **Monthly Report** — Aggregated summary with total hours, overtime breakdown, and expandable daily details
+- **User Switching** — Change user ID to view different users' data
+
+The frontend is exempt from API key authentication, so it is always accessible. API calls from the browser go directly to the same server — no CORS configuration needed.
 
 ---
 
