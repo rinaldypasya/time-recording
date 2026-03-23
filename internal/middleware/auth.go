@@ -12,8 +12,8 @@ import (
 func APIKeyAuth(apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip auth if no key configured or for health checks
-			if apiKey == "" || r.URL.Path == "/health" {
+			// Skip auth if no key configured, for health checks, or for the frontend UI
+			if apiKey == "" || r.URL.Path == "/health" || r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/ui/") {
 				next.ServeHTTP(w, r)
 				return
 			}

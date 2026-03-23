@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/rinaldypasya/time-recording/internal/middleware"
 	"github.com/rinaldypasya/time-recording/internal/repository"
 	"github.com/rinaldypasya/time-recording/internal/service"
+	"github.com/rinaldypasya/time-recording/web"
 )
 
 func main() {
@@ -44,6 +46,16 @@ func main() {
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
+
+	// Serve embedded frontend at root
+	webContent, _ := fs.Sub(web.FS, ".")
+	mux.Handle("/ui/", http.StripPrefix("/ui/", http.FileServer(http.FS(webContent))))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/ui/index.html", http.StatusFound)
+			return
+		}
+	})
 
 	// Apply middleware chain (outermost first)
 	// Logger -> RateLimiter -> APIKeyAuth -> RequestID -> mux
