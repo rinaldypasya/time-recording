@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Time Recording</title>
+<style>
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f5f6fa; --surface: #fff; --border: #e1e4e8;
+  --text: #24292e; --text-muted: #586069; --primary: #2563eb;
+  --primary-hover: #1d4ed8; --success: #16a34a; --danger: #dc2626;
+  --danger-hover: #b91c1c; --warning: #f59e0b; --radius: 8px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+button { cursor: pointer; font: inherit; border: none; border-radius: var(--radius); padding: 8px 16px; transition: background .15s; }
+input, select { font: inherit; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+
+/* ── Layout ── */
+.app { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+header h1 { font-size: 1.5rem; font-weight: 700; }
+.user-bar { display: flex; align-items: center; gap: 8px; }
+.user-bar label { font-size: 0.875rem; color: var(--text-muted); }
+.user-bar input { width: 160px; }
+
+/* ── Tabs ── */
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 24px; }
+.tab { padding: 8px 20px; background: none; color: var(--text-muted); font-weight: 500; border-radius: var(--radius) var(--radius) 0 0; position: relative; bottom: -2px; border-bottom: 2px solid transparent; }
+.tab:hover { color: var(--text); background: rgba(0,0,0,.03); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); background: var(--surface); }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Clock Panel ── */
+.clock-section { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 600px) { .clock-section { grid-template-columns: 1fr; } }
+.clock-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px 24px; text-align: center; }
+.clock-card h2 { font-size: 1.1rem; margin-bottom: 8px; }
+.clock-card p { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 20px; }
+.clock-card input[type="text"] { width: 100%; margin-bottom: 12px; }
+
+.btn-clock-in { background: var(--success); color: #fff; font-size: 1rem; padding: 12px 32px; width: 100%; }
+.btn-clock-in:hover { background: #15803d; }
+.btn-clock-out { background: var(--danger); color: #fff; font-size: 1rem; padding: 12px 32px; width: 100%; }
+.btn-clock-out:hover { background: var(--danger-hover); }
+
+.status-banner { padding: 12px 16px; border-radius: var(--radius); margin-bottom: 24px; font-weight: 500; text-align: center; }
+.status-banner.clocked-in { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.status-banner.clocked-out { background: #f1f5f9; color: var(--text-muted); border: 1px solid var(--border); }
+.status-banner.error { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+
+/* ── Records Panel ── */
+.records-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: var(--danger-hover); }
+.btn-ghost { background: none; color: var(--text-muted); padding: 4px 8px; }
+.btn-ghost:hover { background: rgba(0,0,0,.05); }
+
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+th { background: #f8f9fa; text-align: left; padding: 10px 12px; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8f9fa; }
+.empty-state { text-align: center; padding: 48px 16px; color: var(--text-muted); }
+
+/* ── Modal ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal-overlay.hidden { display: none; }
+.modal { background: var(--surface); border-radius: var(--radius); padding: 24px; width: 90%; max-width: 440px; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
+.modal h3 { margin-bottom: 16px; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; }
+.form-group input { width: 100%; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+/* ── Report Panel ── */
+.report-controls { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; }
+.report-controls .form-group { margin-bottom: 0; }
+.summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.summary-card .label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+.summary-card .value { font-size: 1.75rem; font-weight: 700; margin-top: 4px; }
+.summary-card .value.overtime { color: var(--warning); }
+
+.day-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; overflow: hidden; }
+.day-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; }
+.day-header:hover { background: #f8f9fa; }
+.day-header .date { font-weight: 600; }
+.day-header .meta { display: flex; gap: 16px; font-size: 0.875rem; color: var(--text-muted); }
+.day-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; }
+.day-badge.working { background: #dbeafe; color: #1e40af; }
+.day-badge.weekend { background: #f1f5f9; color: var(--text-muted); }
+.day-badge.overtime { background: #fef3c7; color: #92400e; margin-left: 8px; }
+.day-records { padding: 0 16px 12px; border-top: 1px solid var(--border); }
+.day-records.hidden { display: none; }
+.day-record-item { padding: 8px 0; font-size: 0.85rem; color: var(--text-muted); border-bottom: 1px solid #f0f0f0; }
+.day-record-item:last-child { border-bottom: none; }
+
+/* ── Toast ── */
+.toast-container { position: fixed; top: 16px; right: 16px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 12px 20px; border-radius: var(--radius); color: #fff; font-size: 0.875rem; font-weight: 500; animation: slideIn .2s ease; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Time Recording</h1>
+    <div class="user-bar">
+      <label for="userId">User ID</label>
+      <input type="text" id="userId" placeholder="e.g. alice" value="alice">
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="clock">Clock In/Out</button>
+    <button class="tab" data-tab="records">Records</button>
+    <button class="tab" data-tab="report">Report</button>
+  </div>
+
+  <!-- ── Clock Panel ── -->
+  <div id="panel-clock" class="panel active">
+    <div id="clockStatus" class="status-banner clocked-out">Loading status...</div>
+    <div class="clock-section">
+      <div class="clock-card">
+        <h2>Clock In</h2>
+        <p>Start your work session</p>
+        <input type="text" id="clockInNote" placeholder="Note (optional)">
+        <button class="btn-clock-in" onclick="clockIn()">Clock In</button>
+      </div>
+      <div class="clock-card">
+        <h2>Clock Out</h2>
+        <p>End your current session</p>
+        <input type="text" id="clockOutNote" placeholder="Note (optional)">
+        <button class="btn-clock-out" onclick="clockOut()">Clock Out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Records Panel ── -->
+  <div id="panel-records" class="panel">
+    <div class="records-header">
+      <h2>Time Records</h2>
+      <button class="btn-primary" onclick="openCreateModal()">+ Add Record</button>
+    </div>
+    <div id="recordsTable"></div>
+  </div>
+
+  <!-- ── Report Panel ── -->
+  <div id="panel-report" class="panel">
+    <div class="report-controls">
+      <div class="form-group">
+        <label>From</label>
+        <input type="date" id="reportFrom">
+      </div>
+      <div class="form-group">
+        <label>To</label>
+        <input type="date" id="reportTo">
+      </div>
+      <button class="btn-primary" onclick="loadReport()">Generate Report</button>
+    </div>
+    <div id="reportContent"></div>
+  </div>
+</div>
+
+<!-- ── Create/Edit Modal ── -->
+<div id="recordModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 id="modalTitle">Add Record</h3>
+    <div class="form-group">
+      <label>Clock In</label>
+      <input type="datetime-local" id="modalClockIn" step="1">
+    </div>
+    <div class="form-group">
+      <label>Clock Out</label>
+      <input type="datetime-local" id="modalClockOut" step="1">
+    </div>
+    <div class="form-group">
+      <label>Note</label>
+      <input type="text" id="modalNote" placeholder="Optional note">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" id="modalSubmit" onclick="submitRecord()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast Container ── -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// ── API Helper ──
+const API = '';
+let editingRecordId = null;
+
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(API + path, opts);
+  if (res.status === 204) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function getUserId() {
+  return document.getElementById('userId').value.trim();
+}
+
+// ── Toast ──
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ── Tabs ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+
+    if (tab.dataset.tab === 'clock') refreshClockStatus();
+    if (tab.dataset.tab === 'records') loadRecords();
+  });
+});
+
+// ── Clock In/Out ──
+async function refreshClockStatus() {
+  const uid = getUserId();
+  if (!uid) return;
+  const banner = document.getElementById('clockStatus');
+  try {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
+    const fromStr = from.toISOString().split('T')[0];
+    const toStr = to.toISOString().split('T')[0];
+    const data = await api('GET', `/report?user_id=${uid}&from=${fromStr}&to=${toStr}`);
+    const days = data.report.days || [];
+    let activeRecord = null;
+    for (const day of days) {
+      for (const rec of (day.records || [])) {
+        if (!rec.clock_out) activeRecord = rec;
+      }
+    }
+    if (activeRecord) {
+      const since = new Date(activeRecord.clock_in).toLocaleTimeString();
+      banner.className = 'status-banner clocked-in';
+      banner.textContent = `Clocked in since ${since}` + (activeRecord.note ? ` — ${activeRecord.note}` : '');
+    } else {
+      banner.className = 'status-banner clocked-out';
+      banner.textContent = 'Not clocked in';
+    }
+  } catch (e) {
+    banner.className = 'status-banner clocked-out';
+    banner.textContent = 'Not clocked in';
+  }
+}
+
+async function clockIn() {
+  const uid = getUserId();
+  if (!uid) { toast('Enter a User ID', 'error'); return; }
+  try {
+    const note = document.getElementById('clockInNote').value.trim();
+    await api('POST', '/clock-in', { user_id: uid, note });
+    document.getElementById('clockInNote').value = '';
+    toast('Clocked in successfully');
+    refreshClockStatus();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function clockOut() {
+  const uid = getUserId();
+  if (!uid) { toast('Enter a User ID', 'error'); return; }
+  try {
+    const note = document.getElementById('clockOutNote').value.trim();
+    await api('POST', '/clock-out', { user_id: uid, note });
+    document.getElementById('clockOutNote').value = '';
+    toast('Clocked out successfully');
+    refreshClockStatus();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Records ──
+let allRecords = [];
+
+async function loadRecords() {
+  const uid = getUserId();
+  if (!uid) return;
+  const container = document.getElementById('recordsTable');
+  try {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const fromStr = from.toISOString().split('T')[0];
+    const toStr = to.toISOString().split('T')[0];
+    const data = await api('GET', `/report?user_id=${uid}&from=${fromStr}&to=${toStr}&page_size=366`);
+    allRecords = [];
+    for (const day of (data.report.days || [])) {
+      for (const rec of (day.records || [])) {
+        allRecords.push(rec);
+      }
+    }
+    allRecords.sort((a, b) => new Date(b.clock_in) - new Date(a.clock_in));
+    renderRecords();
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state">Failed to load records</div>`;
+  }
+}
+
+function renderRecords() {
+  const container = document.getElementById('recordsTable');
+  if (!allRecords.length) {
+    container.innerHTML = `<div class="empty-state">No records this month. Click "+ Add Record" to create one.</div>`;
+    return;
+  }
+  let html = `<table><thead><tr><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Duration</th><th>Note</th><th></th></tr></thead><tbody>`;
+  for (const rec of allRecords) {
+    const ci = new Date(rec.clock_in);
+    const co = rec.clock_out ? new Date(rec.clock_out) : null;
+    const date = ci.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    const ciTime = ci.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const coTime = co ? co.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—';
+    let dur = '—';
+    if (co) {
+      const mins = Math.round((co - ci) / 60000);
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      dur = `${h}h ${m}m`;
+    }
+    html += `<tr>
+      <td>${date}</td><td>${ciTime}</td><td>${coTime}</td><td>${dur}</td>
+      <td>${rec.note || ''}</td>
+      <td>
+        <button class="btn-ghost btn-sm" onclick="openEditModal(${rec.id})">Edit</button>
+        <button class="btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteRecord(${rec.id})">Delete</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function deleteRecord(id) {
+  if (!confirm('Delete this record?')) return;
+  try {
+    await api('DELETE', `/records/${id}`);
+    toast('Record deleted');
+    loadRecords();
+    refreshClockStatus();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Modal ──
+function toLocalDatetime(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function openCreateModal() {
+  editingRecordId = null;
+  document.getElementById('modalTitle').textContent = 'Add Record';
+  const now = new Date();
+  document.getElementById('modalClockIn').value = toLocalDatetime(now);
+  document.getElementById('modalClockOut').value = '';
+  document.getElementById('modalNote').value = '';
+  document.getElementById('recordModal').classList.remove('hidden');
+}
+
+function openEditModal(id) {
+  const rec = allRecords.find(r => r.id === id);
+  if (!rec) return;
+  editingRecordId = id;
+  document.getElementById('modalTitle').textContent = 'Edit Record';
+  document.getElementById('modalClockIn').value = toLocalDatetime(new Date(rec.clock_in));
+  document.getElementById('modalClockOut').value = rec.clock_out ? toLocalDatetime(new Date(rec.clock_out)) : '';
+  document.getElementById('modalNote').value = rec.note || '';
+  document.getElementById('recordModal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('recordModal').classList.add('hidden');
+}
+
+async function submitRecord() {
+  const uid = getUserId();
+  if (!uid) { toast('Enter a User ID', 'error'); return; }
+  const ciVal = document.getElementById('modalClockIn').value;
+  const coVal = document.getElementById('modalClockOut').value;
+  const note = document.getElementById('modalNote').value.trim();
+  if (!ciVal) { toast('Clock In time is required', 'error'); return; }
+  const clockIn = new Date(ciVal).toISOString();
+  const clockOut = coVal ? new Date(coVal).toISOString() : undefined;
+  try {
+    if (editingRecordId) {
+      const body = { clock_in: clockIn, note };
+      if (clockOut) body.clock_out = clockOut;
+      await api('PUT', `/records/${editingRecordId}`, body);
+      toast('Record updated');
+    } else {
+      const body = { user_id: uid, clock_in: clockIn, note };
+      if (clockOut) body.clock_out = clockOut;
+      await api('POST', '/records', body);
+      toast('Record created');
+    }
+    closeModal();
+    loadRecords();
+    refreshClockStatus();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Close modal on overlay click
+document.getElementById('recordModal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ── Report ──
+function initReportDates() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  document.getElementById('reportFrom').value = from.toISOString().split('T')[0];
+  document.getElementById('reportTo').value = to.toISOString().split('T')[0];
+}
+
+async function loadReport() {
+  const uid = getUserId();
+  if (!uid) { toast('Enter a User ID', 'error'); return; }
+  const from = document.getElementById('reportFrom').value;
+  const to = document.getElementById('reportTo').value;
+  if (!from || !to) { toast('Select date range', 'error'); return; }
+  const container = document.getElementById('reportContent');
+  try {
+    const data = await api('GET', `/report?user_id=${uid}&from=${from}&to=${to}&page_size=366`);
+    const r = data.report;
+    let html = `<div class="summary-cards">
+      <div class="summary-card"><div class="label">Total Days</div><div class="value">${data.total_days}</div></div>
+      <div class="summary-card"><div class="label">Hours Worked</div><div class="value">${r.total_worked_hours.toFixed(1)}</div></div>
+      <div class="summary-card"><div class="label">Overtime</div><div class="value overtime">${r.total_overtime_hours.toFixed(1)}</div></div>
+    </div>`;
+
+    const days = r.days || [];
+    for (const day of days) {
+      const d = new Date(day.date);
+      const dateStr = d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+      const badge = day.is_working_day ? '<span class="day-badge working">Working Day</span>' : '<span class="day-badge weekend">Non-Working</span>';
+      const otBadge = day.overtime_hours > 0 ? `<span class="day-badge overtime">+${day.overtime_hours.toFixed(1)}h OT</span>` : '';
+      const dayId = `day-${d.toISOString().split('T')[0]}`;
+      let recordsHtml = '';
+      for (const rec of (day.records || [])) {
+        const ci = new Date(rec.clock_in).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        const co = rec.clock_out ? new Date(rec.clock_out).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : 'active';
+        recordsHtml += `<div class="day-record-item">${ci} — ${co}${rec.note ? ` (${rec.note})` : ''}</div>`;
+      }
+      html += `<div class="day-row">
+        <div class="day-header" onclick="document.getElementById('${dayId}').classList.toggle('hidden')">
+          <div><span class="date">${dateStr}</span> ${badge}${otBadge}</div>
+          <div class="meta"><span>${day.worked_hours.toFixed(1)}h</span></div>
+        </div>
+        <div id="${dayId}" class="day-records hidden">${recordsHtml || '<div class="day-record-item">No records</div>'}</div>
+      </div>`;
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state">${e.message}</div>`;
+  }
+}
+
+// ── Init ──
+document.getElementById('userId').addEventListener('change', () => {
+  refreshClockStatus();
+});
+initReportDates();
+refreshClockStatus();
+</script>
+</body>
+</html>
